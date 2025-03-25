@@ -1,0 +1,6 @@
+**/__pycache__/
+.amlignore
+.venv
+.azure
+ehrviz.egg-info/
+**.amltmp
