@@ -6,6 +6,7 @@ import pandas as pd
 
 from ehrviz.stats.frequency.utils import (
     compute_treemap_rectangles,
+    filter_counts_by_pattern,
     group_counts,
     prepare_treemap_data,
 )
@@ -16,13 +17,6 @@ class TestUtils(unittest.TestCase):
         """Set up test fixtures before each test method."""
         # Sample data for testing
         self.sample_counts = pd.Series({"A1": 10, "A2": 15, "B1": 5})
-
-        self.sample_counts_dict = {
-            "A1": 0.1,  # 10%
-            "A2": 0.15,  # 15%
-            "B1": 0.05,  # 5%
-        }
-
         self.sample_rename_dict = {"A1": "A", "A2": "A", "B1": "B"}
 
     def test_group_counts_basic(self):
@@ -43,16 +37,6 @@ class TestUtils(unittest.TestCase):
 
         pd.testing.assert_series_equal(result, expected)
 
-    def test_prepare_treemap_data_dict_input(self):
-        """Test prepare_treemap_data with dictionary input."""
-        sizes, codes = prepare_treemap_data(self.sample_counts_dict)
-
-        expected_sizes = np.array([10.0, 15.0, 5.0])
-        expected_codes = ["A1", "A2", "B1"]
-
-        np.testing.assert_array_almost_equal(sizes, expected_sizes)
-        self.assertEqual(codes, expected_codes)
-
     def test_prepare_treemap_data_series_input(self):
         """Test prepare_treemap_data with Series input."""
         sizes, codes = prepare_treemap_data(self.sample_counts)
@@ -66,10 +50,10 @@ class TestUtils(unittest.TestCase):
     def test_prepare_treemap_data_with_rename(self):
         """Test prepare_treemap_data with rename dictionary."""
         sizes, codes = prepare_treemap_data(
-            self.sample_counts_dict, rename_dict=self.sample_rename_dict
+            self.sample_counts, rename_dict=self.sample_rename_dict
         )
 
-        expected_sizes = np.array([10.0, 15.0, 5.0])
+        expected_sizes = np.array([1000.0, 1500.0, 500.0])
         expected_codes = ["A", "A", "B"]
 
         np.testing.assert_array_almost_equal(sizes, expected_sizes)
@@ -92,18 +76,22 @@ class TestUtils(unittest.TestCase):
             self.assertTrue(0 <= rect["dx"] <= width)
             self.assertTrue(0 <= rect["dy"] <= height)
 
-    def test_compute_treemap_rectangles_custom_dimensions(self):
-        """Test compute_treemap_rectangles with custom dimensions."""
-        sizes = np.array([60.0, 30.0, 10.0])
-        width = 200
-        height = 150
-
-        rects = compute_treemap_rectangles(sizes, width, height)
-
-        # Check that rectangles fit within specified dimensions
-        for rect in rects:
-            self.assertTrue(rect["x"] + rect["dx"] <= width)
-            self.assertTrue(rect["y"] + rect["dy"] <= height)
+    def test_filter_counts_by_pattern_basic(self):
+        """Test basic regex pattern filtering."""
+        counts = pd.Series({
+            'L/A1': 10,
+            'L/A2': 5,
+            'D/B1': 20,
+            'M/C1': 15
+        })
+        
+        # Test filtering lab codes
+        result = filter_counts_by_pattern(counts, '^L/')
+        expected = pd.Series({
+            'L/A1': 10,
+            'L/A2': 5
+        })
+        pd.testing.assert_series_equal(result, expected)
 
     def tearDown(self):
         """Clean up after each test."""

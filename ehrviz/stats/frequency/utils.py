@@ -1,8 +1,25 @@
 from typing import Union
 
-import numpy as np
 import pandas as pd
 import squarify
+
+
+def filter_counts_by_pattern(
+    counts: pd.Series, pattern: str, case: bool = True
+) -> pd.Series:
+    """
+    Filter counts Series based on a regex pattern.
+
+    Args:
+        counts (pd.Series): Series containing counts indexed by codes
+        pattern (str): Regex pattern to filter codes
+        case (bool, optional): Whether to consider case in regex matching. Defaults to True.
+
+    Returns:
+        pd.Series: Filtered counts Series containing only matching codes
+    """
+    matching_codes = counts.index.str.contains(pattern, regex=True, case=case)
+    return counts[matching_codes]
 
 
 def group_counts(counts: pd.Series, rename_dict: dict) -> pd.Series:
@@ -36,20 +53,14 @@ def group_counts(counts: pd.Series, rename_dict: dict) -> pd.Series:
     """
     # Create new index using the mapping dictionary
     new_index = [rename_dict.get(code, code) for code in counts.index]
-
+    
     # Create a new Series with the mapped index and group by new names
-    return (
-        counts.copy()
-        .set_index(new_index)
-        .groupby(level=0)
-        .sum()
-        .sort_values(ascending=False)
-    )
+    grouped_counts = counts.copy()
+    grouped_counts.index = new_index
+    return grouped_counts.groupby(level=0).sum().sort_values(ascending=False)
 
 
-def prepare_treemap_data(
-    counts: Union[dict, pd.Series], rename_dict: Union[dict, None] = None
-):
+def prepare_treemap_data(counts: pd.Series, rename_dict: Union[dict, None] = None):
     """
     Prepare data for treemap visualization.
 
@@ -68,16 +79,13 @@ def prepare_treemap_data(
             sizes (np.ndarray): Array of percentage values computed from counts.
             codes (list): List of code labels (renamed if rename_dict is provided).
     """
-    # Check if counts is a dictionary
+    # Convert dictionary to Series if needed
     if isinstance(counts, dict):
-        # Multiply each count by 100 to convert to percentage
-        codes = list(counts.keys())
-        sizes = np.array([value * 100 for value in counts.values()])
-    else:
-        # Assume counts is a pandas Series
-        percentages = counts * 100
-        sizes = percentages.values
-        codes = list(percentages.index)
+        counts = pd.Series(counts)
+    # Assume counts is a pandas Series
+    percentages = counts * 100
+    sizes = percentages.values
+    codes = list(percentages.index)
 
     if rename_dict is not None:
         codes = [rename_dict.get(code, code) for code in codes]
