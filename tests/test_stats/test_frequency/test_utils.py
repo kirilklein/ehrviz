@@ -78,19 +78,11 @@ class TestUtils(unittest.TestCase):
 
     def test_filter_counts_by_pattern_basic(self):
         """Test basic regex pattern filtering."""
-        counts = pd.Series({
-            'L/A1': 10,
-            'L/A2': 5,
-            'D/B1': 20,
-            'M/C1': 15
-        })
-        
+        counts = pd.Series({"L/A1": 10, "L/A2": 5, "D/B1": 20, "M/C1": 15})
+
         # Test filtering lab codes
-        result = filter_counts_by_pattern(counts, '^L/')
-        expected = pd.Series({
-            'L/A1': 10,
-            'L/A2': 5
-        })
+        result = filter_counts_by_pattern(counts, "^L/")
+        expected = pd.Series({"L/A1": 10, "L/A2": 5})
         pd.testing.assert_series_equal(result, expected)
 
     def tearDown(self):
