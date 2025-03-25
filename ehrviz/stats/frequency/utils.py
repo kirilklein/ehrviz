@@ -53,7 +53,7 @@ def group_counts(counts: pd.Series, rename_dict: dict) -> pd.Series:
     """
     # Create new index using the mapping dictionary
     new_index = [rename_dict.get(code, code) for code in counts.index]
-    
+
     # Create a new Series with the mapped index and group by new names
     grouped_counts = counts.copy()
     grouped_counts.index = new_index
