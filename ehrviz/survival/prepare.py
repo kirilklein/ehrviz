@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import pandas as pd
 import numpy as np
@@ -11,7 +11,7 @@ def calculate_cumulative_incidence(
     offset_days: int = 0,
     max_follow_up_days: int = 365,
     follow_up_df: Optional[pd.DataFrame] = None,
-    weights: Optional[Dict[Union[str, int], float]] = None,
+    weights: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
     Calculate cumulative incidence rates for a group of subjects on a relative timeline.
@@ -30,8 +30,8 @@ def calculate_cumulative_incidence(
         Maximum number of days to include in the analysis after offset.
     follow_up_df : pd.DataFrame, optional
         DataFrame with columns 'subject_id' and 'end_date' indicating individual follow-up end dates.
-    weights : Dict[Union[str, int], float], optional
-        Dictionary mapping subject_ids to their respective weights.
+    weights : pd.DataFrame, optional
+        DataFrame with columns 'subject_id' and 'weight'.
 
     Returns:
     --------
@@ -105,13 +105,11 @@ def calculate_cumulative_incidence(
 
     # Use weights if provided, otherwise default to 1.0
     if weights is None:
-        weights = {subject_id: 1.0 for subject_id in valid_subjects}
+        weights = pd.DataFrame(
+            {"subject_id": list(valid_subjects), "weight": [1.0] * len(valid_subjects)}
+        ).set_index("subject_id")
     else:
-        # Ensure all subjects have weights, defaulting to 1.0 if not specified
-        weights = {
-            subject_id: weights.get(subject_id, 1.0) for subject_id in valid_subjects
-        }
-
+        weights = weights.set_index("subject_id")
     # Get the earliest outcome day for each subject (if any)
     subject_outcome_days = {}
     for _, row in valid_outcomes.iterrows():
@@ -137,7 +135,9 @@ def calculate_cumulative_incidence(
         ]
 
         # Calculate weighted number at risk
-        weighted_at_risk = sum(weights[subject_id] for subject_id in at_risk_subjects)
+        weighted_at_risk = sum(
+            weights.loc[subject_id, "weight"] for subject_id in at_risk_subjects
+        )
         n_at_risk.append(weighted_at_risk)
 
         # Determine subjects with events by this day
@@ -149,12 +149,14 @@ def calculate_cumulative_incidence(
         ]
 
         # Calculate weighted number of events
-        weighted_events = sum(weights[subject_id] for subject_id in event_subjects)
+        weighted_events = sum(
+            weights.loc[subject_id, "weight"] for subject_id in event_subjects
+        )
         n_events.append(weighted_events)
 
         # Calculate cumulative incidence
         total_weighted_subjects = sum(
-            weights[subject_id] for subject_id in valid_subjects
+            weights.loc[subject_id, "weight"] for subject_id in valid_subjects
         )
         if total_weighted_subjects > 0:
             cumulative_incidence.append(weighted_events / total_weighted_subjects)
@@ -181,7 +183,7 @@ def calculate_cumulative_incidence_groups(
     offset_days: int = 0,
     max_follow_up_days: int = 365,
     follow_up_df: Optional[pd.DataFrame] = None,
-    weights: Optional[Dict[Union[str, int], float]] = None,
+    weights: Optional[Dict[str, pd.DataFrame]] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Calculate and compare cumulative incidence across multiple groups.
@@ -218,7 +220,9 @@ def calculate_cumulative_incidence_groups(
             offset_days=offset_days,
             max_follow_up_days=max_follow_up_days,
             follow_up_df=follow_up_df,
-            weights=weights,
+            weights=weights.get(group_name, None)
+            if isinstance(weights, dict)
+            else weights,
         )
 
     return results

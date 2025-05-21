@@ -196,10 +196,10 @@ if __name__ == "__main__":
 
     print("\nExample 4: Using weights")
     # Create sample weights
-    weights = {}
-    for subject_id in all_ids:
-        # Assign random weights between 0.5 and 1.5
-        weights[subject_id] = 0.5 + np.random.random()
+    weights = pd.DataFrame(
+        {"subject_id": all_ids, "weight": [0.5 + np.random.random() for _ in all_ids]}
+    )
+
 
     # Calculate weighted incidence
     weighted_incidence = calculate_cumulative_incidence_groups(
