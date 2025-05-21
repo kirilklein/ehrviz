@@ -11,11 +11,8 @@ requires-python = ">=3.8"
 license = { file = "LICENSE" }
 authors = [
     { name = "Kiril Klein", email = "kikl@di.ku.dk" },
-    { name = "Mikkel Odgaard" },
-    { name = "Stephan Lorenzen" },
-    { name = "Maria Montgomery" },
 ]
-keywords = ["EHR", "MEDS", "visualization", "statistics"]
+keywords = ["EHR", "visualization", "statistics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -37,9 +34,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "black",
-    "flake8",
-    "pytest"
+    "ruff",
+    "unittest"
 ]
 
 [project.urls]
