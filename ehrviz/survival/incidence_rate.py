@@ -1,8 +1,6 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
-from datetime import datetime, timedelta
 from ehrviz.survival.prepare import prepare_incidence_data
 from ehrviz.survival.helper import compute_risk_table, add_risk_table_to_plot
 
