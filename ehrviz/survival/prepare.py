@@ -211,48 +211,72 @@ def _compute_daily_counts(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
     For each day, compute weighted at-risk and weighted events.
     Subjects are removed from at-risk if they have an outcome or are censored on that day.
 
+    Optimized version using pre-computed lookups.
+
     Returns a DataFrame with columns:
       - day
       - at_risk
       - events
       - subjects_at_risk
     """
+    if data.empty:
+        return pd.DataFrame(columns=["day", "at_risk", "events", "subjects_at_risk"])
+
     max_day = int(data["day"].max())
-    records = []
-    for day in range(0, max_day + 1):
-        # subjects observed at or beyond 'day'
-        at_risk_subjects = data.loc[data["day"] >= day, "subject_id"].unique()
 
-        # remove subjects who have outcome or are censored on this specific day
-        subjects_with_events_today = set(
-            data.loc[
-                (data["day"] == day)
-                & ((data["outcome"] == 1) | (data["censored"] == 1)),
-                "subject_id",
-            ]
+    # Pre-compute weighted events by day
+    data_with_weights = data.copy()
+    data_with_weights["weight"] = (
+        data_with_weights["subject_id"].map(weights).fillna(1.0)
+    )
+
+    events_by_day = (
+        data_with_weights[data_with_weights["outcome"] == 1]
+        .groupby("day")["weight"]
+        .sum()
+        .reindex(range(max_day + 1), fill_value=0.0)
+        .to_dict()
+    )
+
+    # Pre-compute sets of subjects with events by day
+    subjects_with_events_by_day = {}
+    event_data = data_with_weights[
+        (data_with_weights["outcome"] == 1) | (data_with_weights["censored"] == 1)
+    ]
+    if not event_data.empty:
+        subjects_with_events_by_day = (
+            event_data.groupby("day")["subject_id"].apply(set).to_dict()
         )
-        at_risk_subjects = [
-            sid for sid in at_risk_subjects if sid not in subjects_with_events_today
-        ]
 
+    # Pre-compute max day for each subject
+    subject_max_days = data.groupby("subject_id")["day"].max().to_dict()
+
+    records = []
+    for day in range(max_day + 1):
+        # Get subjects available on this day (have data >= day)
+        available_subjects = {
+            subj
+            for subj, max_day_subj in subject_max_days.items()
+            if max_day_subj >= day
+        }
+
+        # Remove subjects with events on this day
+        subjects_with_events_today = subjects_with_events_by_day.get(day, set())
+        at_risk_subjects = available_subjects - subjects_with_events_today
+
+        # Calculate weighted at-risk
         weighted_at_risk = sum(weights.get(sid, 1.0) for sid in at_risk_subjects)
-
-        # events occurring exactly on 'day'
-        day_events = data.loc[
-            (data["day"] == day) & (data["outcome"] == 1), "subject_id"
-        ].unique()
-        weighted_events = sum(weights.get(sid, 1.0) for sid in day_events)
 
         records.append(
             {
                 "day": day,
                 "at_risk": weighted_at_risk,
-                "events": weighted_events,
+                "events": events_by_day.get(day, 0.0),
                 "subjects_at_risk": len(at_risk_subjects),
             }
         )
 
-    return pd.DataFrame.from_records(records)
+    return pd.DataFrame(records)
 
 
 def _add_survival_and_cumulative(df: pd.DataFrame) -> pd.DataFrame:
