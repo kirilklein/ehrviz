@@ -4,3 +4,4 @@
 .azure
 ehrviz.egg-info/
 **.amltmp
+ehrviz/sandbox/
