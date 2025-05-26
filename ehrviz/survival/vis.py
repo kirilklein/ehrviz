@@ -1,76 +1,125 @@
-from typing import Tuple
-
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import pandas as pd
+from lifelines import KaplanMeierFitter
+from typing import Optional, Dict, Any
 
 
-def plot_cumulative_incidence(
-    cumulative_incidence: pd.DataFrame,
+def plot_kaplan_meier_cumulative_density(
+    lifelines_data: pd.DataFrame,
+    ax: plt.Axes,
     label: str,
-    fig=None,
-    ax=None,
-    color=None,
-    linestyle="-",
-    linewidth=2,
-    xlabel="Days Since Index Date (+offset)",
-    ylabel="Cumulative Incidence Rate (%)",
-    title="Cumulative Incidence Analysis",
-    **kwargs,
-) -> Tuple[plt.Figure, plt.Axes]:
+    weights: Optional[pd.Series] = None,
+    fit_kwargs: Optional[Dict[str, Any]] = None,
+    plot_kwargs: Optional[Dict[str, Any]] = None,
+) -> plt.Axes:
     """
-    Plot cumulative incidence curve.
+    Plot Kaplan-Meier cumulative incidence curve using lifelines.
 
-    Parameters:
-    -----------
-    cumulative_incidence : pd.DataFrame
-        Output from calculate_cumulative_incidence
+    This function creates a cumulative incidence plot (1 - survival) using the
+    Kaplan-Meier estimator. The plot shows the probability of experiencing the
+    event of interest over time.
+
+    Parameters
+    ----------
+    lifelines_data : pd.DataFrame
+        Survival data with columns:
+        - 'T': Duration until event or censoring (numeric)
+        - 'E': Event indicator (1 = event occurred, 0 = censored)
+        - 'subject_id': Subject identifier (optional, for reference)
+
+    ax : plt.Axes
+        Matplotlib axes object to plot on
+
     label : str
-        Legend label for this curve
-    fig, ax : matplotlib objects, optional
-        Existing figure and axes to plot on
-    color : str, optional
-        Line color
-    linestyle : str, default='-'
-        Line style
-    linewidth : float, default=2
-        Line width
-    **kwargs : dict
-        Additional arguments passed to plt.plot()
+        Label for the curve in the legend
 
-    Returns:
+    weights : pd.Series, optional
+        Weights for each observation, must be same length as lifelines_data.
+        Used for weighted Kaplan-Meier estimation (e.g., inverse probability weights).
+        If None, all observations are weighted equally.
+
+    fit_kwargs : dict, optional
+        Additional keyword arguments passed to KaplanMeierFitter.fit().
+        Common options:
+        - alpha: Confidence level for confidence intervals (default 0.05)
+        - ci_labels: Custom labels for confidence intervals
+
+    plot_kwargs : dict, optional
+        Additional keyword arguments passed to plot_cumulative_density().
+        Common options:
+        - at_risk_counts: Show number at risk table (bool, default False)
+        - show_censors: Show censoring marks (bool, default True)
+        - ci_show: Show confidence intervals (bool, default True)
+        - color: Line color
+        - linestyle: Line style
+
+    Returns
+    -------
+    plt.Axes
+        The modified axes object with the plot
+
+    Examples
     --------
-    tuple
-        (fig, ax) matplotlib figure and axes objects
+    Basic usage:
+
+    >>> import matplotlib.pyplot as plt
+    >>> fig, ax = plt.subplots()
+    >>> plot_kaplan_meier_cumulative_density(
+    ...     lifelines_data, ax, "Treatment Group"
+    ... )
+    >>> plt.show()
+
+    With weights and custom styling:
+
+    >>> weights = lifelines_data['subject_id'].map(weight_dict)
+    >>> plot_kaplan_meier_cumulative_density(
+    ...     lifelines_data, ax, "Weighted Analysis",
+    ...     weights=weights,
+    ...     plot_kwargs={'at_risk_counts': True, 'color': 'red'}
+    ... )
+
+    Comparing multiple groups:
+
+    >>> fig, ax = plt.subplots(figsize=(10, 6))
+    >>> for group_name, group_data in data_by_group.items():
+    ...     plot_kaplan_meier_cumulative_density(
+    ...         group_data, ax, f"Group {group_name}"
+    ...     )
+    >>> ax.legend()
+    >>> plt.show()
+
+    Notes
+    -----
+    - The function plots cumulative incidence (1 - survival probability)
+    - Y-axis is automatically formatted as percentages (0-100%)
+    - Confidence intervals are shown by default if available
+    - The plot shows the probability of experiencing the event by time t
+
+    See Also
+    --------
+    prepare_survival_data_for_lifelines : Prepare data in the required format
+    lifelines.KaplanMeierFitter : Underlying estimation method
     """
+    # Initialize default arguments
+    if fit_kwargs is None:
+        fit_kwargs = {}
+    if plot_kwargs is None:
+        plot_kwargs = {}
 
-    if fig is None or ax is None:
-        fig, ax = plt.subplots(figsize=(10, 6))
+    # Add weights to fit_kwargs if provided
+    if weights is not None:
+        fit_kwargs["weights"] = weights
 
-    # Plot the cumulative incidence
-    ax.plot(
-        cumulative_incidence["day"],
-        cumulative_incidence["cumulative_incidence"],
-        label=label,
-        color=color,
-        linestyle=linestyle,
-        linewidth=linewidth,
-        **kwargs,
-    )
+    # Create and fit Kaplan-Meier estimator
+    kmf = KaplanMeierFitter(label=label)
+    kmf.fit(lifelines_data["T"], lifelines_data["E"], **fit_kwargs)
 
-    # Formatting
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
+    # Plot cumulative density (cumulative incidence)
+    kmf.plot_cumulative_density(ax=ax, **plot_kwargs)
 
-    # Set y-axis to start at 0
-    ax.set_ylim(bottom=0)
+    # Format y-axis as percentages
+    ax.yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1.0))
+    ax.set_ylabel("Cumulative Incidence (%)")
 
-    # Add some styling
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    plt.tight_layout()
-
-    return fig, ax
+    return ax

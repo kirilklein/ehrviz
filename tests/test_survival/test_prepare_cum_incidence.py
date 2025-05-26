@@ -480,6 +480,169 @@ class TestCalculateCumulativeIncidenceIntegration(unittest.TestCase):
         self.assertListEqual(list(result.columns), expected_columns)
         self.assertEqual(len(result), 0)
 
+    def test_kaplan_meier_method_explicit(self):
+        """Test Kaplan-Meier method explicitly specified."""
+        result = calculate_cumulative_incidence(self.survival_data, method="kaplan_meier")
+        
+        # Should be same as default behavior
+        result_default = calculate_cumulative_incidence(self.survival_data)
+        pd.testing.assert_frame_equal(result, result_default)
+
+    def test_crude_method(self):
+        """Test crude cumulative incidence method."""
+        result = calculate_cumulative_incidence(self.survival_data, method="crude")
+        
+        # Check structure
+        expected_columns = [
+            "day",
+            "at_risk",
+            "events",
+            "subjects_at_risk",
+            "hazard",
+            "survival",
+            "cumulative_incidence",
+        ]
+        self.assertListEqual(list(result.columns), expected_columns)
+        
+        # Initial at-risk should be 4
+        initial_at_risk = 4.0
+        
+        # Day 0: No events, cumulative incidence = 0
+        self.assertEqual(result.loc[0, "cumulative_incidence"], 0.0)
+        
+        # Day 1: 1 event out of initial 4, crude hazard = 1/4 = 25%
+        expected_hazard_day1 = 1.0 / initial_at_risk
+        self.assertAlmostEqual(result.loc[1, "hazard"], expected_hazard_day1)
+        self.assertAlmostEqual(result.loc[1, "cumulative_incidence"], 25.0)
+        
+        # Day 2: 1 more event, crude hazard = 1/4 = 25%, cumulative = 50%
+        expected_hazard_day2 = 1.0 / initial_at_risk
+        self.assertAlmostEqual(result.loc[2, "hazard"], expected_hazard_day2)
+        self.assertAlmostEqual(result.loc[2, "cumulative_incidence"], 50.0)
+        
+        # Day 3: No events, cumulative incidence stays at 50%
+        self.assertAlmostEqual(result.loc[3, "hazard"], 0.0)
+        self.assertAlmostEqual(result.loc[3, "cumulative_incidence"], 50.0)
+
+    def test_crude_vs_kaplan_meier_comparison(self):
+        """Test that crude and Kaplan-Meier methods give different results."""
+        result_km = calculate_cumulative_incidence(self.survival_data, method="kaplan_meier")
+        result_crude = calculate_cumulative_incidence(self.survival_data, method="crude")
+        
+        # They should have the same structure
+        self.assertListEqual(list(result_km.columns), list(result_crude.columns))
+        self.assertEqual(len(result_km), len(result_crude))
+        
+        # But different cumulative incidence values (except at day 0)
+        self.assertEqual(result_km.loc[0, "cumulative_incidence"], 
+                        result_crude.loc[0, "cumulative_incidence"])  # Both 0 at start
+        
+        # After events occur, they should differ
+        self.assertNotEqual(result_km.loc[2, "cumulative_incidence"], 
+                           result_crude.loc[2, "cumulative_incidence"])
+
+    def test_crude_method_with_weights(self):
+        """Test crude method with weights."""
+        weights = {"A": 2.0, "B": 0.5, "C": 1.0, "D": 1.5}
+        result = calculate_cumulative_incidence(self.survival_data, weights=weights, method="crude")
+        
+        # Initial weighted at-risk = 2.0 + 0.5 + 1.0 + 1.5 = 5.0
+        initial_at_risk = 5.0
+        
+        # Day 1: B outcome (weight 0.5), crude hazard = 0.5/5.0 = 10%
+        expected_hazard_day1 = 0.5 / initial_at_risk
+        self.assertAlmostEqual(result.loc[1, "hazard"], expected_hazard_day1)
+        self.assertAlmostEqual(result.loc[1, "cumulative_incidence"], 10.0)
+        
+        # Day 2: A outcome (weight 2.0), crude hazard = 2.0/5.0 = 40%
+        # Cumulative = 10% + 40% = 50%
+        expected_hazard_day2 = 2.0 / initial_at_risk
+        self.assertAlmostEqual(result.loc[2, "hazard"], expected_hazard_day2)
+        self.assertAlmostEqual(result.loc[2, "cumulative_incidence"], 50.0)
+
+    def test_invalid_method_raises_error(self):
+        """Test that invalid method raises ValueError."""
+        with self.assertRaises(ValueError) as context:
+            calculate_cumulative_incidence(self.survival_data, method="invalid_method")
+        
+        self.assertIn("method must be either 'kaplan_meier' or 'crude'", str(context.exception))
+
+    def test_crude_method_single_subject(self):
+        """Test crude method with single subject."""
+        single_subject_data = pd.DataFrame({
+            'subject_id': ['A', 'A', 'A'],
+            'day': [0, 1, 2],
+            'outcome': [0, 0, 1],
+            'censored': [0, 0, 0]
+        })
+        
+        result = calculate_cumulative_incidence(single_subject_data, method="crude")
+        
+        # Initial at-risk = 1, outcome on day 2
+        # Day 2: hazard = 1/1 = 100%, cumulative incidence = 100%
+        self.assertEqual(result.loc[2, "cumulative_incidence"], 100.0)
+        self.assertEqual(result.loc[2, "survival"], 0.0)
+
+    def test_crude_method_no_events(self):
+        """Test crude method with no events (all censored)."""
+        censored_data = pd.DataFrame({
+            'subject_id': ['A', 'A', 'B', 'B'],
+            'day': [0, 1, 0, 1],
+            'outcome': [0, 0, 0, 0],
+            'censored': [0, 1, 0, 1]
+        })
+        
+        result = calculate_cumulative_incidence(censored_data, method="crude")
+        
+        # No events, so cumulative incidence should remain 0
+        self.assertTrue((result['cumulative_incidence'] == 0).all())
+        self.assertTrue((result['survival'] == 1.0).all())
+
+
+# Add these test cases to test the helper functions
+class TestCrudeVsKaplanMeierMethods(unittest.TestCase):
+    """Test the different cumulative incidence calculation methods."""
+    
+    def test_kaplan_meier_helper(self):
+        """Test Kaplan-Meier helper function."""
+        daily_counts = pd.DataFrame({
+            'day': [0, 1, 2],
+            'at_risk': [100.0, 80.0, 60.0],
+            'events': [0.0, 20.0, 10.0],
+            'subjects_at_risk': [100, 80, 60]
+        })
+        
+        result = _add_survival_and_cumulative_km(daily_counts)
+        
+        # Day 1: hazard = 20/80 = 0.25, survival = 0.75, cum_inc = 25%
+        self.assertAlmostEqual(result.loc[1, 'hazard'], 0.25)
+        self.assertAlmostEqual(result.loc[1, 'cumulative_incidence'], 25.0)
+    
+    def test_crude_helper(self):
+        """Test crude cumulative incidence helper function."""
+        daily_counts = pd.DataFrame({
+            'day': [0, 1, 2],
+            'at_risk': [100.0, 80.0, 60.0],  # at_risk shrinks but we use initial
+            'events': [0.0, 20.0, 10.0],
+            'subjects_at_risk': [100, 80, 60]
+        })
+        
+        result = _add_survival_and_cumulative_crude(daily_counts)
+        
+        # Day 1: crude hazard = 20/100 = 0.20, cum_inc = 20%
+        self.assertAlmostEqual(result.loc[1, 'hazard'], 0.20)
+        self.assertAlmostEqual(result.loc[1, 'cumulative_incidence'], 20.0)
+        
+        # Day 2: crude hazard = 10/100 = 0.10, cum_inc = 20% + 10% = 30%
+        self.assertAlmostEqual(result.loc[2, 'hazard'], 0.10)
+        self.assertAlmostEqual(result.loc[2, 'cumulative_incidence'], 30.0)
+    
+    def test_empty_dataframe_crude(self):
+        """Test crude method with empty DataFrame."""
+        empty_df = pd.DataFrame(columns=['day', 'at_risk', 'events', 'subjects_at_risk'])
+        result = _add_survival_and_cumulative_crude(empty_df)
+        self.assertEqual(len(result), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
