@@ -45,10 +45,13 @@ def prepare_survival_data(
 
 
 def calculate_cumulative_incidence(
-    data: pd.DataFrame, subject_list: list = None, weights: dict = None
+    data: pd.DataFrame,
+    subject_list: list = None,
+    weights: dict = None,
+    method: str = "kaplan_meier",
 ) -> pd.DataFrame:
     """
-    Calculate cumulative incidence rate using Kaplan-Meier-like approach.
+    Calculate cumulative incidence rate using Kaplan-Meier-like approach or crude method.
 
     Parameters:
     -----------
@@ -58,6 +61,10 @@ def calculate_cumulative_incidence(
         List of subject_ids to include in analysis
     weights : Dict, optional
         Dictionary mapping subject_id to weight for weighted analysis
+    method : str, default="kaplan_meier"
+        Method for calculating cumulative incidence:
+        - "kaplan_meier": Adjusts denominator as subjects leave risk set (default)
+        - "crude": Uses initial population as constant denominator
 
     Returns:
     --------
@@ -76,13 +83,18 @@ def calculate_cumulative_incidence(
                 "cumulative_incidence",
             ]
         )
+
+    if method not in ["kaplan_meier", "crude"]:
+        raise ValueError("method must be either 'kaplan_meier' or 'crude'")
+
     data_filtered = _filter_subjects(data, subject_list)
-
     w = _initialize_weights(data_filtered, weights)
-
     daily = _compute_daily_counts(data_filtered, w)
 
-    result = _add_survival_and_cumulative(daily)
+    if method == "kaplan_meier":
+        result = _add_survival_and_cumulative_km(daily)
+    else:  # crude
+        result = _add_survival_and_cumulative_crude(daily)
 
     return result
 
@@ -279,12 +291,38 @@ def _compute_daily_counts(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def _add_survival_and_cumulative(df: pd.DataFrame) -> pd.DataFrame:
+def _add_survival_and_cumulative_km(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Given daily counts, compute hazard, survival, and cumulative incidence (%).
+    Given daily counts, compute hazard, survival, and cumulative incidence (%) using Kaplan-Meier method.
+    Denominator adjusts as subjects leave the risk set.
     """
     df = df.copy()
     df["hazard"] = np.where(df["at_risk"] > 0, df["events"] / df["at_risk"], 0)
     df["survival"] = (1 - df["hazard"]).cumprod()
     df["cumulative_incidence"] = (1 - df["survival"]) * 100
+    return df
+
+
+def _add_survival_and_cumulative_crude(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Given daily counts, compute crude cumulative incidence (%).
+    Uses initial population as constant denominator.
+    """
+    df = df.copy()
+
+    # Get initial population size (day 0 at-risk)
+    if len(df) == 0:
+        return df
+
+    initial_at_risk = df.iloc[0]["at_risk"]
+
+    # Calculate crude hazard using initial population as denominator
+    df["hazard"] = np.where(initial_at_risk > 0, df["events"] / initial_at_risk, 0)
+
+    # Crude cumulative incidence is just cumulative sum of daily hazards
+    df["cumulative_incidence"] = df["hazard"].cumsum() * 100
+
+    # For crude method, survival is 1 - cumulative_incidence/100
+    df["survival"] = 1 - (df["cumulative_incidence"] / 100)
+
     return df
